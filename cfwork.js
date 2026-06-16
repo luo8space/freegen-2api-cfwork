@@ -17,7 +17,9 @@
  */
 
 // ---[第一部分: 核心配置 (Configuration-as-Code)] ---
+
 const CONFIG = {
+
   // 项目元数据
   PROJECT_NAME: "freegen-2api",
   PROJECT_VERSION: "1.0.2",
@@ -48,7 +50,7 @@ const CONFIG = {
   },
 
   // 模型列表
-  MODELS:[
+  MODELS: [
     "freegen-txt2img",
     "freegen-img2img",
     "gpt-4o", // 兼容性映射
@@ -58,11 +60,12 @@ const CONFIG = {
 };
 
 // ---[第二部分: Worker 入口与路由] ---
+
 export default {
   async fetch(request, env, ctx) {
     // 环境变量覆盖
     const apiKey = env.API_MASTER_KEY || CONFIG.API_MASTER_KEY;
-    request.ctx = { apiKey };
+    // FIX: Request objects are immutable in CF Workers, pass apiKey as argument instead
 
     const url = new URL(request.url);
 
@@ -72,7 +75,7 @@ export default {
     // 2. 路由分发
     if (url.pathname === '/') return handleUI(request);
     if (url.pathname === '/favicon.ico') return new Response(null, { status: 204 }); // 消除 favicon 404 报错
-    if (url.pathname.startsWith('/v1/')) return handleApi(request, ctx);
+    if (url.pathname.startsWith('/v1/')) return handleApi(request, apiKey, ctx);
     
     return createErrorResponse(`路径未找到: ${url.pathname}`, 404, 'not_found');
   }
@@ -201,8 +204,8 @@ async function generateImage(prompt, ratio_id = "1:1", image_data = null, ctx) {
 
 // --- [第四部分: API 接口处理] ---
 
-async function handleApi(request, ctx) {
-  if (!verifyAuth(request)) return createErrorResponse('Unauthorized - 无效的 API Key', 401, 'unauthorized');
+async function handleApi(request, apiKey, ctx) {
+  if (!verifyAuth(request, apiKey)) return createErrorResponse('Unauthorized - 无效的 API Key', 401, 'unauthorized');
 
   const url = new URL(request.url);
   const requestId = `req-${crypto.randomUUID()}`;
@@ -347,11 +350,11 @@ async function handleImageGenerations(request, requestId, ctx) {
 
 // --- 辅助函数 ---
 
-function verifyAuth(request) {
+function verifyAuth(request, apiKey) {
   const auth = request.headers.get('Authorization');
-  const key = request.ctx.apiKey;
-  if (key === "1") return true;
-  return auth === `Bearer ${key}`;
+  // apiKey now passed in as parameter
+  if (apiKey === "1") return true;
+  return auth === `Bearer ${apiKey}`;
 }
 
 function createChatChunk(id, model, content, finishReason = null) {
@@ -384,6 +387,7 @@ function handleCorsPreflight() {
 }
 
 // ---[第五部分: 开发者驾驶舱 UI (WebUI)] ---
+
 function handleUI(request) {
   const origin = new URL(request.url).origin;
   
@@ -426,7 +430,7 @@ function handleUI(request) {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
-
+        
         /* 左侧控制面板 */
         .left-panel {
             width: 400px;
@@ -734,7 +738,6 @@ function handleUI(request) {
                 <span class="label">API Key (点击复制)</span>
                 <input type="text" value="__API_MASTER_KEY__" readonly onclick="copyText(this.value, 'API Key 已复制')">
             </div>
-
             <div class="box">
                 <span class="label">模型选择</span>
                 <select id="model">
@@ -749,7 +752,6 @@ function handleUI(request) {
                     <option value="4:3">4:3</option>
                     <option value="3:4">3:4</option>
                 </select>
-
                 <span class="label">参考图 (图生图 - 支持拖拽/粘贴)</span>
                 <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileInput(event)">
                 
@@ -762,7 +764,6 @@ function handleUI(request) {
                     <button class="remove-image-btn" onclick="removeImage(event)" title="移除图片">✖</button>
                     <img id="preview-img" src="" alt="Preview">
                 </div>
-
                 <span class="label">提示词 (Prompt)</span>
                 <textarea id="prompt" rows="4" placeholder="描述你想生成的图片... (支持直接 Ctrl+V 粘贴图片到此处)"></textarea>
                 
@@ -791,12 +792,11 @@ function handleUI(request) {
             </div>
         </div>
     </div>
-
     <script>
         const API_KEY = "__API_MASTER_KEY__";
         const URL = "__WORKER_ORIGIN__/v1/chat/completions";
         let uploadedBase64 = null;
-
+        
         // 提示工具
         function showToast(msg) {
             const toast = document.createElement('div');
@@ -805,12 +805,12 @@ function handleUI(request) {
             document.body.appendChild(toast);
             setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2000);
         }
-
+        
         function copyText(text, msg) {
             navigator.clipboard.writeText(text);
             showToast(msg || '已复制到剪贴板');
         }
-
+        
         function appendLog(step, data, isErr = false) {
             const div = document.createElement('div');
             div.className = 'log-entry' + (isErr ? ' log-err' : '');
@@ -820,7 +820,7 @@ function handleUI(request) {
             document.getElementById('logs').appendChild(div);
             document.getElementById('logs').scrollTop = document.getElementById('logs').scrollHeight;
         }
-
+        
         function appendChat(role, html) {
             const div = document.createElement('div');
             div.className = 'msg ' + role;
@@ -830,7 +830,7 @@ function handleUI(request) {
             chat.scrollTop = chat.scrollHeight;
             return div;
         }
-
+        
         // --- 图片处理逻辑 (拖拽、粘贴、选择) ---
         function processFile(file) {
             if (!file || !file.type.startsWith('image/')) {
@@ -848,11 +848,11 @@ function handleUI(request) {
             };
             reader.readAsDataURL(file);
         }
-
+        
         function handleFileInput(e) {
             if (e.target.files.length > 0) processFile(e.target.files[0]);
         }
-
+        
         function removeImage(e) {
             if(e) e.stopPropagation();
             uploadedBase64 = null;
@@ -861,7 +861,7 @@ function handleUI(request) {
             document.getElementById('file-input').value = '';
             appendLog('UI', '已移除参考图');
         }
-
+        
         // 拖拽事件
         const dropZone = document.getElementById('upload-area');
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -871,7 +871,7 @@ function handleUI(request) {
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
         });
-
+        
         // 全局粘贴事件
         document.addEventListener('paste', (e) => {
             const items = e.clipboardData.items;
@@ -883,7 +883,7 @@ function handleUI(request) {
                 }
             }
         });
-
+        
         // --- 发送请求逻辑 ---
         async function send() {
             const prompt = document.getElementById('prompt').value.trim();
@@ -912,31 +912,25 @@ function handleUI(request) {
                 ratio_id: document.getElementById('ratio').value,
                 image_data: uploadedBase64
             });
-
             const requestBody = {
                 model: document.getElementById('model').value,
                 messages:[{ role: 'user', content: payloadContent }],
                 stream: true
             };
-
             appendLog('Request', '发送生成请求...');
-
             try {
                 const res = await fetch(URL, {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + API_KEY, 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
-
                 if (!res.ok) throw new Error(await res.text());
-
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let fullText = '';
                 
                 // [关键修复] 引入 buffer 解决超大 Base64 字符串导致的 TCP 分块截断问题
                 let buffer = '';
-
                 while (true) {
                     const { done, value } = await reader.read();
                     if (value) {
@@ -962,7 +956,7 @@ function handleUI(request) {
                                 if (content) {
                                     fullText += content;
                                     // 高性能正则解析 Markdown 图片，并处理换行符
-                                    let htmlContent = fullText.replace(/!\\[[^\\]]*\\]\\(([^)]+)\\)/g, '<img src="$1" onclick="window.open(this.src)" title="点击查看大图">');
+                                    let htmlContent = fullText.replace(/!\\\[\\[^\\\]\\\*\\\]\\(([^)]+)\\)/g, '<img src="$1" onclick="window.open(this.src)" title="点击查看大图">');
                                     htmlContent = htmlContent.replace(/\\n/g, '<br>');
                                     aiMsg.innerHTML = htmlContent;
                                     document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
@@ -993,7 +987,7 @@ function handleUI(request) {
     .replace(/__WORKER_ORIGIN__/g, origin)
     .replace(/__API_MASTER_KEY__/g, CONFIG.API_MASTER_KEY)
     .replace(/__MODEL_OPTIONS__/g, modelOptions);
-
+    
   return new Response(finalHtml, { 
     headers: { 
       'Content-Type': 'text/html; charset=utf-8'
