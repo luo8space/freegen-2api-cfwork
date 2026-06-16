@@ -59,6 +59,7 @@ const CONFIG = {
   DEFAULT_MODEL: "freegen-txt2img",
 };
 
+export default {   
 async fetch(request, env, ctx) {
   try {
     const apiKey = env.API_MASTER_KEY || CONFIG.API_MASTER_KEY;
@@ -78,13 +79,7 @@ async fetch(request, env, ctx) {
       type: e.constructor.name
     }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
-}
-    if (url.pathname === '/favicon.ico') return new Response(null, { status: 204 }); // 消除 favicon 404 报错
-    if (url.pathname.startsWith('/v1/')) return handleApi(request, apiKey, ctx);
-    
-    return createErrorResponse(`路径未找到: ${url.pathname}`, 404, 'not_found');
-  }
-};
+};                                              // ← 【新加】export default 结束
 
 // ---[第三部分: 核心业务逻辑 (FreeGen API 交互)] ---
 
