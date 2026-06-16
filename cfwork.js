@@ -59,21 +59,26 @@ const CONFIG = {
   DEFAULT_MODEL: "freegen-txt2img",
 };
 
-// ---[第二部分: Worker 入口与路由] ---
-
-export default {
-  async fetch(request, env, ctx) {
-    // 环境变量覆盖
+async fetch(request, env, ctx) {
+  try {
     const apiKey = env.API_MASTER_KEY || CONFIG.API_MASTER_KEY;
-    // FIX: Request objects are immutable in CF Workers, pass apiKey as argument instead
-
     const url = new URL(request.url);
 
-    // 1. CORS 预检
     if (request.method === 'OPTIONS') return handleCorsPreflight();
 
-    // 2. 路由分发
     if (url.pathname === '/') return handleUI(request);
+    if (url.pathname === '/favicon.ico') return new Response(null, { status: 204 });
+    if (url.pathname.startsWith('/v1/')) return handleApi(request, apiKey, ctx);
+
+    return createErrorResponse(`路径未找到: ${url.pathname}`, 404, 'not_found');
+  } catch (e) {
+    return new Response(JSON.stringify({
+      error: e.message,
+      stack: e.stack,
+      type: e.constructor.name
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
     if (url.pathname === '/favicon.ico') return new Response(null, { status: 204 }); // 消除 favicon 404 报错
     if (url.pathname.startsWith('/v1/')) return handleApi(request, apiKey, ctx);
     
